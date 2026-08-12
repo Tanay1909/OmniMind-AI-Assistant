@@ -183,7 +183,7 @@ SQLAlchemy>=2.0.43
 PyJWT>=2.10.1
 bcrypt>=4.3.0
 cryptography>=45.0.6
-
+email-validator>=2.2.0
 
 # ==========================================================
 # Visualization
