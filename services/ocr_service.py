@@ -66,6 +66,10 @@ class BaseOCRProvider(ABC):
 class EasyOCRProvider(BaseOCRProvider):
     """
     EasyOCR implementation.
+
+    The EasyOCR model is loaded lazily when OCR is
+    actually requested. This prevents the model download
+    from blocking Streamlit application startup.
     """
 
     def __init__(
@@ -75,7 +79,27 @@ class EasyOCRProvider(BaseOCRProvider):
 
         self.languages = languages or ["en"]
 
-        self.reader = easyocr.Reader(self.languages)
+        # Reader is intentionally NOT created here.
+        self.reader = None
+
+    # ======================================================
+    # LAZY INITIALIZATION
+    # ======================================================
+
+    def _get_reader(self):
+
+        if self.reader is None:
+
+            self.reader = easyocr.Reader(
+                self.languages,
+                gpu=False,
+            )
+
+        return self.reader
+
+    # ======================================================
+    # OCR
+    # ======================================================
 
     def extract_text(
         self,
@@ -84,13 +108,23 @@ class EasyOCRProvider(BaseOCRProvider):
 
         image_path = Path(image_path)
 
-        results = self.reader.readtext(str(image_path))
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        if not image_path.is_file():
+            raise ValueError(f"Image path is not a file: {image_path}")
+
+        reader = self._get_reader()
+
+        results = reader.readtext(str(image_path))
 
         text_lines: list[str] = []
         confidences: list[float] = []
 
         for _, text, confidence in results:
+
             text_lines.append(text)
+
             confidences.append(float(confidence))
 
         average_confidence = sum(confidences) / len(confidences) if confidences else 0.0
@@ -102,6 +136,7 @@ class EasyOCRProvider(BaseOCRProvider):
             metadata={
                 "lines": len(text_lines),
                 "image": str(image_path),
+                "gpu": False,
             },
         )
 
@@ -135,7 +170,7 @@ class OCRService:
         return self.provider.extract_text(image_path)
 
     # ======================================================
-    # Helper
+    # PROVIDER INFO
     # ======================================================
 
     def provider_name(
@@ -145,11 +180,12 @@ class OCRService:
         return self.provider.__class__.__name__
 
     # ======================================================
-    # Health
+    # HEALTH
     # ======================================================
 
     def health_check(
         self,
     ) -> bool:
 
+        # Do NOT initialize EasyOCR here.
         return True
